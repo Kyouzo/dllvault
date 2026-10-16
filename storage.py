@@ -161,3 +161,38 @@ class R2Storage:
         except (ClientError, BotoCoreError) as exc:
             log.exception("R2 delete failed")
             raise StorageError("delete failed") from exc
+
+    def list_ids(self, limit: int = 2000) -> list[tuple[str, int, "datetime | None"]]:
+        """Return (file_id, size, last_modified) for every stored object.
+
+        Cheap: one or more list calls, no per-object HEAD. Used to drive the
+        admin listing, which then fetches names lazily via `head`.
+        """
+        results: list[tuple[str, int, datetime | None]] = []
+        token: str | None = None
+        prefix_len = len(self.key_prefix)
+        try:
+            while len(results) < limit:
+                kwargs = {"Bucket": self.bucket, "Prefix": self.key_prefix, "MaxKeys": 1000}
+                if token:
+                    kwargs["ContinuationToken"] = token
+                resp = self._client.list_objects_v2(**kwargs)
+                for item in resp.get("Contents", []):
+                    file_id = item["Key"][prefix_len:]
+                    if file_id:
+                        results.append((file_id, int(item.get("Size", 0)), item.get("LastModified")))
+                if resp.get("IsTruncated") and resp.get("NextContinuationToken"):
+                    token = resp["NextContinuationToken"]
+                else:
+                    break
+        except (ClientError, BotoCoreError) as exc:
+            log.exception("R2 list failed")
+            raise StorageError("could not list files") from exc
+        return results
+
+    def head_optional(self, file_id: str) -> StoredObject | None:
+        """Like `head`, but returns None instead of raising when absent."""
+        try:
+            return self.head(file_id)
+        except ObjectNotFound:
+            return None

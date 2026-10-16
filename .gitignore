@@ -1,0 +1,19 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node (only used to build CSS; the compiled static/css/styles.css IS committed)
+node_modules/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

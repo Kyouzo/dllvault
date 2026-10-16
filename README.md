@@ -46,6 +46,20 @@ render.yaml         Render Blueprint
 | `DELETE /api/files/<id>` | Headers `X-Requested-With: fetch`, `X-Delete-Token: <key>` |
 | `GET /download/<id>` | 302 to a presigned R2 URL (or the public URL if `R2_PUBLIC_BASE_URL` is set) |
 | `GET /health` | `{"status":"healthy"}`. Doesn't call R2, so it's cheap to poll |
+| `GET /admin` | Password-gated page listing every uploaded file with delete buttons |
+
+### Command-line uploads
+
+`scripts/upload.py` uploads from any machine with Python 3.8+ (standard library only):
+
+```bash
+export FILESHELF_URL=https://your-app.onrender.com
+python scripts/upload.py report.pdf photos.zip     # prints link + delete key per file
+python scripts/upload.py data.csv --json           # one JSON object per line
+python scripts/upload.py --delete <file-id> <delete-key>
+```
+
+Uploads are subject to the same rate limit as the web page (`UPLOAD_RATE_LIMIT`).
 
 Errors always look like `{"ok": false, "error": {"code": "...", "message": "..."}}`.
 
@@ -92,13 +106,30 @@ Commit the regenerated `static/css/styles.css`.
 
 **Why R2 at all?** Render's filesystem is ephemeral: anything written to disk disappears on every deploy or restart. This app never stores uploads on local disk beyond the in-flight request; everything goes to R2.
 
+## Admin file listing
+
+`GET /admin` lists **every** file in the bucket (including ones uploaded by the command-line script) with its name, size, upload date, expiry, an Open link, and a Delete button. It's protected by a password:
+
+1. Set `ADMIN_PASSWORD` (Render → Environment, or `.env` locally) to a long, random value. If it's blank, the admin area is disabled and `/admin` returns 404.
+2. Set `SESSION_COOKIE_SECURE=1` in production (the Blueprint does this) so the admin login cookie is only sent over HTTPS.
+3. Go to `https://your-app.onrender.com/admin`, sign in, and manage files.
+
+Notes:
+- Admin delete removes any file immediately — it doesn't need that file's personal delete key.
+- The list shows up to `ADMIN_LIST_LIMIT` files (default 2000), newest first.
+- Signing in sets one strictly-necessary session cookie (documented in the Cookie Policy); ordinary visitors never get a cookie.
+- The admin link isn't shown in the site navigation; browse to `/admin` directly.
+
 ## Configuration reference
 
 | Variable | Default | Notes |
 |---|---|---|
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | — | Required for uploads |
 | `R2_PUBLIC_BASE_URL` | empty | Only if you *intentionally* attached a public domain to the bucket. Then downloads redirect to `<base>/uploads/<id>` instead of a presigned URL, and anyone who learns that URL can fetch it until deletion |
-| `FLASK_SECRET_KEY` | random per process | Set it in production |
+| `FLASK_SECRET_KEY` | random per process | Set it in production (also signs the admin session) |
+| `ADMIN_PASSWORD` | empty | Enables `/admin`. Blank = admin area disabled |
+| `ADMIN_LIST_LIMIT` | `2000` | Max files shown on the admin page |
+| `SESSION_COOKIE_SECURE` | `0` | Set `1` in production so the admin cookie is HTTPS-only |
 | `MAX_UPLOAD_BYTES` | `20971520` (20 MiB) | |
 | `RETENTION_DAYS` | `30` | `0` = keep until deleted |
 | `DOWNLOAD_URL_TTL` | `300` s | Lifetime of each presigned URL. The `/download/<id>` link itself works until the file expires |

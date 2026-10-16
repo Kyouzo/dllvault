@@ -7,10 +7,22 @@ import hmac
 import logging
 import os
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 
 from dotenv import load_dotenv
-from flask import Flask, abort, jsonify, redirect, render_template, request
+from flask import (
+    Flask,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.exceptions import HTTPException
@@ -67,6 +79,14 @@ def create_app(config: dict | None = None, storage: R2Storage | None = None) -> 
         CONTACT_EMAIL=os.getenv("CONTACT_EMAIL", ""),
         LEGAL_LAST_UPDATED=os.getenv("LEGAL_LAST_UPDATED", ""),
         JSON_SORT_KEYS=False,
+        # Admin listing. Blank password => the admin area is disabled entirely.
+        ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD", ""),
+        ADMIN_LIST_LIMIT=_int_env("ADMIN_LIST_LIMIT", 2000, 1),
+        # Session cookie (only ever set once an admin logs in).
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "0") == "1",
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     )
     if config:
         app.config.update(config)
@@ -161,6 +181,56 @@ def _load_live_object(file_id: str):
             pass  # a bucket lifecycle rule will catch it
         abort(410)
     return storage, obj, uploaded_at, expires_at
+
+
+# ------------------------------------------------------------------- admin
+
+def _admin_enabled() -> bool:
+    from flask import current_app
+
+    return bool(current_app.config.get("ADMIN_PASSWORD"))
+
+
+def _csrf_token() -> str:
+    token = session.get("csrf")
+    if not token:
+        token = secrets.token_urlsafe(24)
+        session["csrf"] = token
+    return token
+
+
+def _valid_csrf(sent: str | None) -> bool:
+    expected = session.get("csrf", "")
+    return bool(expected) and bool(sent) and hmac.compare_digest(sent, expected)
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _admin_enabled():
+            abort(404)
+        if not session.get("admin"):
+            return redirect(url_for("admin_login", next="list"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def _describe(storage: R2Storage, file_id: str, size: int, last_modified, retention_days: int) -> dict:
+    """Build a display row for the admin table, fetching the stored name."""
+    obj = storage.head_optional(file_id)
+    meta = obj.metadata if obj else {}
+    uploaded_at = _parse_time(meta.get("uploaded-at")) or last_modified
+    expires_at = _expiry(uploaded_at, retention_days)
+    return {
+        "id": file_id,
+        "name": utils.decode_meta(meta.get("original-name")) or "(unknown)",
+        "type": utils.decode_meta(meta.get("declared-type")) or "application/octet-stream",
+        "size": obj.size if obj else size,
+        "uploaded_at": _iso(uploaded_at),
+        "expires_at": _iso(expires_at),
+        "expired": bool(expires_at and expires_at <= _now()),
+    }
 
 
 # ----------------------------------------------------------------- routes
@@ -318,6 +388,78 @@ def register_routes(app: Flask) -> None:
         resp = redirect(target, code=302)
         resp.headers["Cache-Control"] = "no-store"
         return resp
+
+    # ------------------------------------------------------------- admin
+    @app.get("/admin")
+    @admin_required
+    def admin_list():
+        storage = get_storage()
+        retention = app.config["RETENTION_DAYS"]
+        limit = app.config["ADMIN_LIST_LIMIT"]
+        entries = storage.list_ids(limit=limit)
+        # Fetch each file's stored name/metadata in parallel to keep the page fast.
+        if entries:
+            with ThreadPoolExecutor(max_workers=16) as pool:
+                rows = list(pool.map(lambda e: _describe(storage, e[0], e[1], e[2], retention), entries))
+        else:
+            rows = []
+        rows.sort(key=lambda r: r["uploaded_at"] or "", reverse=True)
+        total_bytes = sum(r["size"] for r in rows)
+        return render_template(
+            "admin.html",
+            rows=rows,
+            total_bytes=total_bytes,
+            truncated=len(entries) >= limit,
+            csrf_token=_csrf_token(),
+        )
+
+    @app.get("/admin/login")
+    def admin_login():
+        if not _admin_enabled():
+            abort(404)
+        if session.get("admin"):
+            return redirect(url_for("admin_list"))
+        return render_template("admin_login.html", csrf_token=_csrf_token())
+
+    @app.post("/admin/login")
+    @limiter.limit("5 per minute;30 per hour")
+    def admin_login_post():
+        if not _admin_enabled():
+            abort(404)
+        if not _valid_csrf(request.form.get("csrf")):
+            abort(400)
+        password = request.form.get("password", "")
+        expected = app.config["ADMIN_PASSWORD"]
+        if not hmac.compare_digest(password, expected):
+            log.warning("failed admin login from %s", get_remote_address())
+            flash("Incorrect password.", "error")
+            return redirect(url_for("admin_login"))
+        session.clear()
+        session["admin"] = True
+        session["csrf"] = secrets.token_urlsafe(24)
+        session.permanent = True
+        return redirect(url_for("admin_list"))
+
+    @app.post("/admin/logout")
+    def admin_logout():
+        session.clear()
+        return redirect(url_for("admin_login"))
+
+    @app.post("/admin/delete/<file_id>")
+    @admin_required
+    def admin_delete(file_id: str):
+        if not _valid_csrf(request.form.get("csrf")):
+            abort(400)
+        if not utils.is_valid_file_id(file_id):
+            abort(404)
+        storage = get_storage()
+        try:
+            storage.delete(file_id)
+            log.info("admin deleted file id=%s", file_id)
+            flash("File deleted.", "success")
+        except StorageError:
+            flash("That file could not be deleted. Try again.", "error")
+        return redirect(url_for("admin_list"))
 
 
 # ----------------------------------------------------------------- errors
