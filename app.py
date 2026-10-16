@@ -289,6 +289,14 @@ def register_routes(app: Flask) -> None:
         }
 
         storage = get_storage()
+        # A filename identifies the logical release in this service. Remove
+        # every older object with the same sanitized name before saving the
+        # replacement, including files uploaded before the CLI state file
+        # existed.
+        for old_file_id, _old_object in storage.find_all_by_original_name(name):
+            storage.delete(old_file_id)
+            log.info("replaced old file id=%s name=%s", old_file_id, name)
+
         for _attempt in range(3):
             file_id = secrets.token_urlsafe(16)  # 128 bits, 22 URL-safe chars
             file.stream.seek(0)

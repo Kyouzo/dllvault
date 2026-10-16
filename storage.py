@@ -199,6 +199,12 @@ class R2Storage:
 
     def find_by_original_name(self, name: str) -> tuple[str, StoredObject] | None:
         """Find the first object whose stored original filename matches exactly."""
+        matches = self.find_all_by_original_name(name, limit=1)
+        return matches[0] if matches else None
+
+    def find_all_by_original_name(self, name: str, limit: int | None = None) -> list[tuple[str, StoredObject]]:
+        """Find stored objects whose original filename matches exactly."""
+        matches: list[tuple[str, StoredObject]] = []
         for file_id, _size, _last_modified in self.list_ids():
             obj = self.head_optional(file_id)
             if obj and obj.metadata.get("original-name"):
@@ -207,5 +213,7 @@ class R2Storage:
                 from utils import decode_meta
 
                 if decode_meta(obj.metadata["original-name"]) == name:
-                    return file_id, obj
-        return None
+                    matches.append((file_id, obj))
+                    if limit is not None and len(matches) >= limit:
+                        break
+        return matches
