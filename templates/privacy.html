@@ -1,0 +1,72 @@
+{% extends "_legal.html" %}
+{% from "_macros.html" import need, contact with context %}
+{% block title %}Privacy Policy · {{ site_name }}{% endblock %}
+{% block heading %}Privacy Policy{% endblock %}
+{% block body %}
+<p>
+  This policy explains what information {{ site_name }} (operated by {{ need(operator_name, "OPERATOR_NAME") }})
+  handles when you use it, why, and for how long. The service is designed to collect as little as possible:
+  there are no accounts, no analytics, no advertising and no cookies.
+</p>
+
+<h2>What we process</h2>
+<ul>
+  <li><strong>The file you upload</strong> and its contents, so we can store it and let people with the link download it.</li>
+  <li><strong>File details:</strong> the file name, size, the type reported by your browser, and the upload time. These are shown on download and used to apply the retention period.</li>
+  <li><strong>A one-way hash of your delete key.</strong> The key itself is shown to you once and is not stored in readable form.</li>
+  <li><strong>Your IP address and basic request data</strong> (such as time, URL and browser user agent). These are used to limit abuse through rate limiting and may appear in our hosting and storage providers' operational logs.</li>
+</ul>
+<p>We do not ask for your name, email address or any other contact details to upload a file.</p>
+
+<h2>Why we process it</h2>
+<ul>
+  <li>To provide the service you requested: storing your file and delivering it to people with the link.</li>
+  <li>To keep the service secure and available, including preventing abuse and investigating misuse.</li>
+  <li>To comply with legal obligations, such as responding to valid legal requests.</li>
+</ul>
+
+<h2>How long we keep it</h2>
+<ul>
+  {% if retention_days %}
+  <li>Uploaded files and their details are deleted automatically {{ retention_days }} days after upload, or earlier if you delete them with your delete key.</li>
+  {% else %}
+  <li>Uploaded files and their details are kept until you delete them with your delete key or we remove them under the Terms.</li>
+  {% endif %}
+  <li>Rate-limiting counters are held in memory for minutes to a day and then discarded.</li>
+  <li>Provider logs are kept according to those providers' own retention policies.</li>
+</ul>
+
+<h2>Who can see your file</h2>
+<p>
+  {% if public_delivery %}
+  Files are stored with Cloudflare R2 and delivered from a public storage domain under a long, random address.
+  {% else %}
+  Files are stored in a private storage bucket. Each download uses a short-lived signed link that is created when the download link is opened.
+  {% endif %}
+  Anyone who has the download link can download the file, so share it only with people you trust.
+  We do not inspect, index or sell uploaded files, but we may remove a file if we are told it breaks the law or our Terms.
+</p>
+
+<h2>Service providers</h2>
+<ul>
+  <li><strong>Render</strong> hosts the web application.</li>
+  <li><strong>Cloudflare R2</strong> stores uploaded files.</li>
+</ul>
+<p>These providers process data on our behalf, and data may be processed in countries other than your own.</p>
+
+<h2>Browser storage</h2>
+<p>
+  If you switch between light and dark themes, your choice is saved in your browser's local storage. It never leaves your
+  device. See the <a href="{{ url_for('cookies') }}">Cookie Policy</a>.
+</p>
+
+<h2>Your choices and rights</h2>
+<p>
+  You can delete a file at any time with its delete key. Depending on where you live, you may have rights to access, correct,
+  delete or object to the processing of personal data. To make a request or ask a question, contact {{ contact() }}.
+  Because we don't collect accounts or contact details, we may need the download link to identify a file.
+</p>
+
+<h2>Changes</h2>
+<p>We'll update this page if our practices change and revise the date at the top.</p>
+{% endblock %}

@@ -1,0 +1,12 @@
+{
+  "name": "file-upload-platform",
+  "private": true,
+  "description": "Build tooling for the Tailwind stylesheet only. The app itself is Python.",
+  "scripts": {
+    "build:css": "tailwindcss -i ./tailwind/input.css -o ./static/css/styles.css --minify",
+    "watch:css": "tailwindcss -i ./tailwind/input.css -o ./static/css/styles.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

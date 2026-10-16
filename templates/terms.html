@@ -1,0 +1,61 @@
+{% extends "_legal.html" %}
+{% from "_macros.html" import need, contact with context %}
+{% block title %}Terms of Service · {{ site_name }}{% endblock %}
+{% block heading %}Terms of Service{% endblock %}
+{% block body %}
+<p>
+  These terms govern your use of {{ site_name }}, operated by {{ need(operator_name, "OPERATOR_NAME") }}.
+  By uploading a file you agree to them. If you don't agree, please don't use the service.
+</p>
+
+<h2>The service</h2>
+<p>
+  {{ site_name }} lets you upload a single file of up to {{ max_upload_mib }} MiB and receive a link that others can use to
+  download it. The service is free and provided as is.
+</p>
+
+<h2>Your content</h2>
+<ul>
+  <li>You keep all rights to the files you upload. You give us permission to store and deliver them only as needed to run the service.</li>
+  <li>You must have the right to upload and share every file you upload.</li>
+  <li>You are responsible for who you share the link with. Anyone with the link can download the file.</li>
+</ul>
+
+<h2>Acceptable use</h2>
+<p>You must not use the service to upload or share material that:</p>
+<ul>
+  <li>is illegal, or that infringes someone else's copyright, trademark, privacy or other rights;</li>
+  <li>contains malware or is intended to harm devices, networks or people;</li>
+  <li>sexually exploits or endangers children;</li>
+  <li>harasses, threatens or defrauds others, including phishing.</li>
+</ul>
+<p>You must not try to disrupt the service, get around its limits, or access files you weren't given a link to.</p>
+
+<h2>Availability and retention</h2>
+<ul>
+  {% if retention_days %}
+  <li>Files are deleted automatically {{ retention_days }} days after upload.</li>
+  {% endif %}
+  <li>We don't guarantee that a file will remain available for any period. A file is available only while it, our storage, and the service itself remain active. Keep your own copy of anything important.</li>
+  <li>We may change, limit or discontinue the service at any time.</li>
+</ul>
+
+<h2>Removal of content</h2>
+<p>
+  We may remove any file, without notice, if we believe it breaks these terms or the law. To report a file, contact
+  {{ contact() }} with the download link and the reason for your report.
+</p>
+
+<h2>Disclaimer and liability</h2>
+<p>
+  The service is provided without warranties of any kind. To the extent the law allows, we are not liable for any loss of
+  data, loss of access, or indirect or consequential damages resulting from your use of the service. Nothing in these terms
+  limits rights you have under laws that cannot be excluded by agreement.
+</p>
+
+<h2>Changes</h2>
+<p>We may update these terms. The date at the top shows when they last changed. Continuing to use the service means you accept the updated terms.</p>
+
+<h2>Contact</h2>
+<p>Questions about these terms: {{ contact() }}.</p>
+{% endblock %}

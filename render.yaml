@@ -1,0 +1,37 @@
+# Render Blueprint. In the dashboard: New + > Blueprint > pick this repo.
+# Secrets marked `sync: false` are prompted for on first deploy and never live in Git.
+services:
+  - type: web
+    name: file-upload-platform
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    # 2 workers x 4 threads; 60 s timeout covers a 20 MiB upload on a slow link.
+    startCommand: gunicorn app:app --workers 2 --threads 4 --timeout 60 --bind 0.0.0.0:$PORT --access-logfile -
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: RETENTION_DAYS
+        value: "30"
+      - key: DOWNLOAD_URL_TTL
+        value: "300"
+      - key: SITE_NAME
+        value: "Fileshelf"
+      - key: OPERATOR_NAME
+        sync: false
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: LEGAL_LAST_UPDATED
+        sync: false

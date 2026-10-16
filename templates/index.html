@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="mx-auto max-w-5xl px-4 pb-16 pt-12 sm:px-6 sm:pt-20">
+  <div class="mx-auto max-w-2xl text-center">
+    <h1 class="text-balance text-3xl font-semibold tracking-tight sm:text-5xl">Send a file with one link.</h1>
+    <p class="mx-auto mt-4 max-w-xl text-pretty text-base text-ink-600 dark:text-ink-300 sm:text-lg">
+      Upload anything up to {{ max_upload_mib }}&nbsp;MiB and get a download link you can share.
+      {% if retention_days %}Files are removed after {{ retention_days }}&nbsp;days.{% endif %}
+    </p>
+  </div>
+
+  <div id="uploader"
+       class="mx-auto mt-10 max-w-xl rounded-2xl border border-ink-200 bg-white p-4 shadow-card dark:border-ink-800 dark:bg-ink-900 sm:p-6"
+       data-max-bytes="{{ max_upload_bytes }}"
+       data-max-mib="{{ max_upload_mib }}"
+       data-state="{{ 'empty' if storage_ready else 'disabled' }}">
+
+    {% if not storage_ready %}
+    <div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200" role="status">
+      Uploads are unavailable right now because file storage isn't configured.
+    </div>
+    {% endif %}
+
+    <form id="upload-form" novalidate>
+      {# ---------- Empty state: the whole zone is a <label>, so it is clickable and keyboard reachable through the input. ---------- #}
+      <div data-panel="empty">
+        <input id="file-input" name="file" type="file" class="sr-only peer"
+               aria-describedby="file-hint" {% if not storage_ready %}disabled{% endif %}>
+        <label for="file-input" id="dropzone"
+               class="dropzone group flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-ink-300 px-6 py-12 text-center transition
+                      hover:border-accent hover:bg-accent-50/50 peer-focus-visible:border-accent peer-focus-visible:ring-4 peer-focus-visible:ring-accent/25
+                      dark:border-ink-700 dark:hover:bg-accent/5 sm:py-16">
+          <span class="flex h-12 w-12 items-center justify-center rounded-full bg-accent-50 text-accent transition group-hover:scale-105 dark:bg-accent/15 dark:text-accent-300">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></svg>
+          </span>
+          <span class="mt-4 text-base font-medium">
+            <span class="dropzone-copy-default">Drag a file here, or <span class="text-accent underline decoration-accent/40 underline-offset-4 dark:text-accent-300">browse</span></span>
+            <span class="dropzone-copy-active">Drop to select this file</span>
+          </span>
+          <span id="file-hint" class="mt-1.5 text-sm text-ink-500 dark:text-ink-400">Any file type, up to {{ max_upload_mib }}&nbsp;MiB</span>
+        </label>
+      </div>
+
+      {# ---------- Selected / uploading / error ---------- #}
+      <div data-panel="selected" hidden>
+        <div class="flex items-start gap-4 rounded-xl border border-ink-200 bg-ink-50 p-4 dark:border-ink-700 dark:bg-ink-950/50">
+          <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-semibold uppercase tracking-wide text-ink-600 ring-1 ring-ink-200 dark:bg-ink-800 dark:text-ink-200 dark:ring-ink-700" id="file-ext" aria-hidden="true">FILE</span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate font-medium" id="file-name"></p>
+            <p class="mt-0.5 text-sm text-ink-500 dark:text-ink-400">
+              <span id="file-size"></span><span aria-hidden="true"> · </span><span id="file-type"></span>
+            </p>
+          </div>
+          <button type="button" id="clear-btn"
+                  class="focus-ring -m-1 rounded-md p-1 text-ink-400 transition hover:text-ink dark:hover:text-ink-100"
+                  aria-label="Remove selected file">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+
+        <div id="progress-wrap" class="mt-5" hidden>
+          <div class="mb-2 flex items-center justify-between text-sm">
+            <span id="progress-label" class="text-ink-600 dark:text-ink-300">Uploading…</span>
+            <span id="progress-pct" class="tabular-nums font-medium">0%</span>
+          </div>
+          <div class="h-2 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800"
+               role="progressbar" id="progress-bar" aria-labelledby="progress-label"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="progress-fill" class="progress-fill h-full w-0 rounded-full bg-accent transition-[width] duration-200 ease-out"></div>
+          </div>
+        </div>
+
+        <div id="error-box" class="mt-5 flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200" role="alert" hidden>
+          <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 8v4.5m0 3.5h.01"/></svg>
+          <p id="error-text"></p>
+        </div>
+
+        <div class="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" id="cancel-btn" class="btn-secondary" hidden>Cancel upload</button>
+          <button type="submit" id="upload-btn" class="btn-primary">
+            <svg class="spinner h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".3" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+            <span id="upload-btn-label">Upload file</span>
+          </button>
+        </div>
+      </div>
+    </form>
+
+    {# ---------- Success ---------- #}
+    <div data-panel="success" hidden>
+      <div class="flex items-center gap-3">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+        </span>
+        <div class="min-w-0">
+          <h2 class="font-semibold focus:outline-none" id="success-heading" tabindex="-1">Your file is ready to share</h2>
+          <p class="truncate text-sm text-ink-500 dark:text-ink-400" id="success-meta"></p>
+        </div>
+      </div>
+
+      <label for="share-link" class="mt-6 block text-sm font-medium">Download link</label>
+      <div class="mt-2 flex flex-col gap-2 sm:flex-row">
+        <input id="share-link" type="text" readonly
+               class="focus-ring min-w-0 flex-1 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2.5 font-mono text-sm text-ink-700 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
+        <button type="button" id="copy-btn" class="btn-primary sm:w-32">
+          <span id="copy-label">Copy link</span>
+        </button>
+      </div>
+      <p id="copy-status" class="sr-only" aria-live="polite"></p>
+
+      <p class="mt-4 text-sm leading-relaxed text-ink-600 dark:text-ink-300" id="expiry-note"></p>
+
+      <details class="mt-5 rounded-lg border border-ink-200 px-4 py-3 text-sm dark:border-ink-700">
+        <summary class="focus-ring cursor-pointer rounded font-medium">Delete this file</summary>
+        <p class="mt-3 text-ink-600 dark:text-ink-300">
+          Keep this delete key if you might want to remove the file later. It is shown only once and is not stored in readable form.
+        </p>
+        <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+          <label for="delete-key" class="sr-only">Delete key</label>
+          <input id="delete-key" type="text" readonly class="focus-ring min-w-0 flex-1 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 font-mono text-xs dark:border-ink-700 dark:bg-ink-950">
+          <button type="button" id="delete-btn" class="btn-danger">Delete now</button>
+        </div>
+        <p id="delete-status" class="mt-2 text-sm" aria-live="polite"></p>
+      </details>
+
+      <div class="mt-6 border-t border-ink-100 pt-5 dark:border-ink-800">
+        <button type="button" id="again-btn" class="btn-secondary w-full sm:w-auto">Upload another file</button>
+      </div>
+    </div>
+  </div>
+
+  <ul class="mx-auto mt-10 grid max-w-xl gap-4 text-sm text-ink-600 dark:text-ink-300 sm:grid-cols-3">
+    <li class="flex items-start gap-2.5"><span class="dot" aria-hidden="true"></span><span>Up to {{ max_upload_mib }}&nbsp;MiB per file</span></li>
+    <li class="flex items-start gap-2.5"><span class="dot" aria-hidden="true"></span><span>Stored in a private bucket</span></li>
+    <li class="flex items-start gap-2.5"><span class="dot" aria-hidden="true"></span><span>{% if retention_days %}Removed after {{ retention_days }}&nbsp;days{% else %}Delete any time with your key{% endif %}</span></li>
+  </ul>
+  <p class="mx-auto mt-8 max-w-xl text-center text-xs text-ink-500 dark:text-ink-400">
+    Anyone with the link can download the file. Don't upload anything you wouldn't want shared.
+    By uploading you agree to the <a class="link-quiet underline" href="{{ url_for('terms') }}">Terms</a>.
+  </p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/app.js') }}" defer
+        data-retention-days="{{ retention_days }}" id="app-script"></script>
+{% endblock %}

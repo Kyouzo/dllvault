@@ -1,0 +1,26 @@
+{% extends "_legal.html" %}
+{% from "_macros.html" import contact with context %}
+{% block title %}Cookie Policy · {{ site_name }}{% endblock %}
+{% block heading %}Cookie Policy{% endblock %}
+{% block body %}
+<p>{{ site_name }} does not set any cookies, and it does not use analytics, advertising or tracking tools.</p>
+
+<h2>Local storage</h2>
+<p>
+  If you use the theme switch in the header, your choice (<code>light</code> or <code>dark</code>) is saved in your browser's
+  local storage under the key <code>theme</code>. It stays on your device, is never sent to us, and is used only to show the
+  theme you picked. You can remove it at any time by clearing this site's data in your browser settings.
+</p>
+
+<h2>Downloads</h2>
+<p>
+  When you open a download link, your browser is redirected to our storage provider, Cloudflare, to fetch the file.
+  We do not ask Cloudflare to set cookies for these downloads.
+</p>
+
+<h2>Changes</h2>
+<p>
+  If we ever introduce cookies that aren't strictly necessary, we'll update this page first and ask for your consent where
+  the law requires it. Questions: {{ contact() }}.
+</p>
+{% endblock %}

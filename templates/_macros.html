@@ -1,0 +1,7 @@
+{# Values the operator must supply. Missing ones are highlighted so they can't ship unnoticed. #}
+{% macro need(value, env) -%}
+  {%- if value %}{{ value }}{% else %}<span class="placeholder">[set {{ env }}]</span>{% endif -%}
+{%- endmacro %}
+{% macro contact() -%}
+  {%- if contact_email %}<a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% else %}<span class="placeholder">[set CONTACT_EMAIL]</span>{% endif -%}
+{%- endmacro %}
