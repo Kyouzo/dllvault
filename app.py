@@ -100,6 +100,7 @@ def create_app(config: dict | None = None, storage: R2Storage | None = None) -> 
         except StorageConfigError as exc:
             log.error("%s. Uploads are disabled until it is configured.", exc)
     app.extensions["storage"] = storage
+    app.extensions["replacement_pool"] = ThreadPoolExecutor(max_workers=2)
 
     register_routes(app)
     register_errors(app)
@@ -214,6 +215,21 @@ def _describe(storage: R2Storage, file_id: str, size: int, last_modified) -> dic
     }
 
 
+def _remove_replaced_files(storage: R2Storage, name: str, new_file_id: str, uploaded_at: datetime) -> None:
+    """Remove older same-name objects without delaying the upload response."""
+    try:
+        for old_file_id, _old_object in storage.find_all_by_original_name(name):
+            if old_file_id == new_file_id:
+                continue
+            old_uploaded_at = _parse_time(_old_object.metadata.get("uploaded-at"))
+            if old_uploaded_at is None or old_uploaded_at >= uploaded_at:
+                continue
+            storage.delete(old_file_id)
+            log.info("replaced old file id=%s name=%s", old_file_id, name)
+    except StorageError:
+        log.exception("background replacement cleanup failed for name=%s", name)
+
+
 # ----------------------------------------------------------------- routes
 
 def register_routes(app: Flask) -> None:
@@ -279,7 +295,7 @@ def register_routes(app: Flask) -> None:
 
         name = utils.sanitize_filename(file.filename)
         declared_type = utils.sanitize_mime(file.mimetype)
-        uploaded_at = _now().replace(microsecond=0)
+        uploaded_at = _now()
         delete_token = secrets.token_urlsafe(24)
         metadata = {
             "original-name": utils.encode_meta(name),
@@ -289,14 +305,6 @@ def register_routes(app: Flask) -> None:
         }
 
         storage = get_storage()
-        # A filename identifies the logical release in this service. Remove
-        # every older object with the same sanitized name before saving the
-        # replacement, including files uploaded before the CLI state file
-        # existed.
-        for old_file_id, _old_object in storage.find_all_by_original_name(name):
-            storage.delete(old_file_id)
-            log.info("replaced old file id=%s name=%s", old_file_id, name)
-
         for _attempt in range(3):
             file_id = secrets.token_urlsafe(16)  # 128 bits, 22 URL-safe chars
             file.stream.seek(0)
@@ -314,6 +322,10 @@ def register_routes(app: Flask) -> None:
         else:
             return fail(500, "upload_failed", "The upload could not be saved. Please try again.")
 
+        # Searching R2 for same-name objects requires listing and HEADing the
+        # bucket. Do that after the new object is safely stored and off the
+        # request path, so the uploader receives its response promptly.
+        app.extensions["replacement_pool"].submit(_remove_replaced_files, storage, name, file_id, uploaded_at)
         log.info("stored file id=%s size=%d", file_id, size)
         return ok(
             {
@@ -534,6 +546,8 @@ def register_security_headers(app: Flask) -> None:
             resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.path.startswith("/api/"):
             resp.headers.setdefault("Cache-Control", "no-store")
+        if request.path == "/api/upload":
+            resp.headers.setdefault("Connection", "close")
         return resp
 
 
