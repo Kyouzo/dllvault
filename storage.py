@@ -196,3 +196,16 @@ class R2Storage:
             return self.head(file_id)
         except ObjectNotFound:
             return None
+
+    def find_by_original_name(self, name: str) -> tuple[str, StoredObject] | None:
+        """Find the first object whose stored original filename matches exactly."""
+        for file_id, _size, _last_modified in self.list_ids():
+            obj = self.head_optional(file_id)
+            if obj and obj.metadata.get("original-name"):
+                # Metadata is encoded by utils.encode_meta; import lazily to
+                # keep this storage module independent of Flask application code.
+                from utils import decode_meta
+
+                if decode_meta(obj.metadata["original-name"]) == name:
+                    return file_id, obj
+        return None

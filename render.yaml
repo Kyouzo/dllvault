@@ -27,8 +27,6 @@ services:
         sync: false
       - key: SESSION_COOKIE_SECURE
         value: "1"
-      - key: RETENTION_DAYS
-        value: "30"
       - key: DOWNLOAD_URL_TTL
         value: "300"
       - key: SITE_NAME

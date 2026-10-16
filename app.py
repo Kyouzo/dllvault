@@ -70,7 +70,6 @@ def create_app(config: dict | None = None, storage: R2Storage | None = None) -> 
         MAX_UPLOAD_BYTES=max_bytes,
         # Werkzeug rejects larger request bodies with 413 before we read them.
         MAX_CONTENT_LENGTH=max_bytes + MULTIPART_OVERHEAD,
-        RETENTION_DAYS=_int_env("RETENTION_DAYS", 30),
         DOWNLOAD_URL_TTL=_int_env("DOWNLOAD_URL_TTL", 300, 30),
         R2_PUBLIC_BASE_URL=(os.getenv("R2_PUBLIC_BASE_URL") or "").rstrip("/"),
         UPLOAD_RATE_LIMIT=os.getenv("UPLOAD_RATE_LIMIT", "10 per minute;100 per day"),
@@ -138,12 +137,6 @@ def _parse_time(value: str | None) -> datetime | None:
         return None
 
 
-def _expiry(uploaded_at: datetime | None, retention_days: int) -> datetime | None:
-    if not retention_days or uploaded_at is None:
-        return None
-    return uploaded_at + timedelta(days=retention_days)
-
-
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat(timespec="seconds").replace("+00:00", "Z") if dt else None
 
@@ -161,9 +154,7 @@ def _hash_token(token: str) -> str:
 
 
 def _load_live_object(file_id: str):
-    """Fetch metadata for a valid, unexpired file or abort with 404/410."""
-    from flask import current_app
-
+    """Fetch metadata for a valid file; files remain available until deleted."""
     if not utils.is_valid_file_id(file_id):
         abort(404)
     storage = get_storage()
@@ -173,14 +164,7 @@ def _load_live_object(file_id: str):
         abort(404)
 
     uploaded_at = _parse_time(obj.metadata.get("uploaded-at")) or obj.last_modified
-    expires_at = _expiry(uploaded_at, current_app.config["RETENTION_DAYS"])
-    if expires_at and expires_at <= _now():
-        try:
-            storage.delete(file_id)
-        except StorageError:
-            pass  # a bucket lifecycle rule will catch it
-        abort(410)
-    return storage, obj, uploaded_at, expires_at
+    return storage, obj, uploaded_at, None
 
 
 # ------------------------------------------------------------------- admin
@@ -216,20 +200,17 @@ def admin_required(view):
     return wrapped
 
 
-def _describe(storage: R2Storage, file_id: str, size: int, last_modified, retention_days: int) -> dict:
+def _describe(storage: R2Storage, file_id: str, size: int, last_modified) -> dict:
     """Build a display row for the admin table, fetching the stored name."""
     obj = storage.head_optional(file_id)
     meta = obj.metadata if obj else {}
     uploaded_at = _parse_time(meta.get("uploaded-at")) or last_modified
-    expires_at = _expiry(uploaded_at, retention_days)
     return {
         "id": file_id,
         "name": utils.decode_meta(meta.get("original-name")) or "(unknown)",
         "type": utils.decode_meta(meta.get("declared-type")) or "application/octet-stream",
         "size": obj.size if obj else size,
         "uploaded_at": _iso(uploaded_at),
-        "expires_at": _iso(expires_at),
-        "expired": bool(expires_at and expires_at <= _now()),
     }
 
 
@@ -246,7 +227,6 @@ def register_routes(app: Flask) -> None:
             "legal_last_updated": cfg["LEGAL_LAST_UPDATED"],
             "max_upload_bytes": cfg["MAX_UPLOAD_BYTES"],
             "max_upload_mib": cfg["MAX_UPLOAD_BYTES"] // MIB,
-            "retention_days": cfg["RETENTION_DAYS"],
             "download_url_ttl": cfg["DOWNLOAD_URL_TTL"],
             "public_delivery": bool(cfg["R2_PUBLIC_BASE_URL"]),
             "current_year": _now().year,
@@ -326,7 +306,6 @@ def register_routes(app: Flask) -> None:
         else:
             return fail(500, "upload_failed", "The upload could not be saved. Please try again.")
 
-        expires_at = _expiry(uploaded_at, app.config["RETENTION_DAYS"])
         log.info("stored file id=%s size=%d", file_id, size)
         return ok(
             {
@@ -336,7 +315,6 @@ def register_routes(app: Flask) -> None:
                     "size": size,
                     "type": declared_type,
                     "uploaded_at": _iso(uploaded_at),
-                    "expires_at": _iso(expires_at),
                 },
                 "download_url": request.host_url.rstrip("/") + f"/download/{file_id}",
                 "delete_token": delete_token,
@@ -347,7 +325,7 @@ def register_routes(app: Flask) -> None:
     @app.get("/api/files/<file_id>")
     @limiter.limit("60 per minute")
     def file_metadata(file_id: str):
-        _storage, obj, uploaded_at, expires_at = _load_live_object(file_id)
+        _storage, obj, uploaded_at, _ = _load_live_object(file_id)
         return ok(
             {
                 "file": {
@@ -356,8 +334,34 @@ def register_routes(app: Flask) -> None:
                     "size": obj.size,
                     "type": utils.decode_meta(obj.metadata.get("declared-type")) or "application/octet-stream",
                     "uploaded_at": _iso(uploaded_at),
-                    "expires_at": _iso(expires_at),
                 }
+            }
+        )
+
+    @app.get("/api/files/by-name/<path:file_name>")
+    @limiter.limit("30 per minute")
+    def file_by_name(file_name: str):
+        """Return metadata and a five-minute signed URL for an original name."""
+        storage = get_storage()
+        match = storage.find_by_original_name(file_name)
+        if match is None:
+            abort(404)
+
+        file_id, obj = match
+        name = utils.decode_meta(obj.metadata.get("original-name")) or file_name
+        download_url = storage.presigned_download_url(
+            file_id, app.config["DOWNLOAD_URL_TTL"], utils.content_disposition(name)
+        )
+        uploaded_at = _parse_time(obj.metadata.get("uploaded-at")) or obj.last_modified
+        return ok(
+            {
+                "file": {
+                    "name": name,
+                    "size": obj.size,
+                    "type": utils.decode_meta(obj.metadata.get("declared-type")) or "application/octet-stream",
+                    "uploaded_at": _iso(uploaded_at),
+                },
+                "download_url": download_url,
             }
         )
 
@@ -396,13 +400,12 @@ def register_routes(app: Flask) -> None:
     @admin_required
     def admin_list():
         storage = get_storage()
-        retention = app.config["RETENTION_DAYS"]
         limit = app.config["ADMIN_LIST_LIMIT"]
         entries = storage.list_ids(limit=limit)
         # Fetch each file's stored name/metadata in parallel to keep the page fast.
         if entries:
             with ThreadPoolExecutor(max_workers=16) as pool:
-                rows = list(pool.map(lambda e: _describe(storage, e[0], e[1], e[2], retention), entries))
+                rows = list(pool.map(lambda e: _describe(storage, e[0], e[1], e[2]), entries))
         else:
             rows = []
         rows.sort(key=lambda r: r["uploaded_at"] or "", reverse=True)
@@ -470,7 +473,6 @@ ERROR_COPY = {
     400: ("bad_request", "The request could not be understood."),
     404: ("not_found", "That file doesn't exist or has been deleted."),
     405: ("method_not_allowed", "That action isn't supported here."),
-    410: ("expired", "That file has expired and is no longer available."),
     413: ("too_large", None),
     429: ("rate_limited", "Too many requests. Please wait a moment and try again."),
     503: ("unavailable", "File storage is temporarily unavailable."),
