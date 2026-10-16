@@ -58,13 +58,13 @@
               {% elif row.expires_at %}{{ row.expires_at[:10] }}{% else %}—{% endif %}
             </td>
             <td class="whitespace-nowrap px-4 py-3 text-right">
-              <div class="inline-flex items-center gap-1.5">
+              <div class="inline-flex items-center justify-end gap-2.5">
                 <a href="{{ url_for('download', file_id=row.id) }}" target="_blank" rel="noopener"
-                   class="focus-ring rounded-md px-2.5 py-1.5 text-ink-600 transition hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800">Open</a>
+                   class="focus-ring inline-flex items-center rounded-lg border border-ink-200 px-3 py-1.5 font-medium text-ink-700 transition hover:bg-ink-50 dark:border-ink-700 dark:text-ink-200 dark:hover:bg-ink-800">Open</a>
                 <form method="post" action="{{ url_for('admin_delete', file_id=row.id) }}"
                       data-confirm="Delete “{{ row.name }}”? This can't be undone.">
                   <input type="hidden" name="csrf" value="{{ csrf_token }}">
-                  <button type="submit" class="btn-danger px-2.5 py-1.5">Delete</button>
+                  <button type="submit" class="btn-danger px-3 py-1.5">Delete</button>
                 </form>
               </div>
             </td>
