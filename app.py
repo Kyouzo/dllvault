@@ -250,6 +250,8 @@ def register_routes(app: Flask) -> None:
             "download_url_ttl": cfg["DOWNLOAD_URL_TTL"],
             "public_delivery": bool(cfg["R2_PUBLIC_BASE_URL"]),
             "current_year": _now().year,
+            "admin_enabled": bool(cfg["ADMIN_PASSWORD"]),
+            "admin_signed_in": bool(session.get("admin")),
         }
 
     @app.get("/")
