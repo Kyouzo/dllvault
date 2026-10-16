@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Files · Admin · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Uploaded files</h1>
+      <p class="mt-1 text-sm text-ink-500 dark:text-ink-400">
+        {{ rows|length }} file{{ '' if rows|length == 1 else 's' }} · {{ total_bytes | filesizeformat(binary=True) }} total
+        {%- if truncated %} · showing the first {{ rows|length }}{% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="{{ url_for('index') }}" class="btn-secondary">Upload</a>
+      <form method="post" action="{{ url_for('admin_logout') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn-secondary">Sign out</button>
+      </form>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="mt-5 rounded-lg border px-4 py-3 text-sm
+        {% if category == 'error' %}border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200
+        {% else %}border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200{% endif %}"
+        role="status">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% if not rows %}
+    <div class="mt-10 rounded-2xl border border-dashed border-ink-300 py-16 text-center text-ink-500 dark:border-ink-700 dark:text-ink-400">
+      No files have been uploaded yet.
+    </div>
+  {% else %}
+    <div class="mt-6 overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-card dark:border-ink-800 dark:bg-ink-900">
+      <table class="w-full text-left text-sm">
+        <thead class="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500 dark:border-ink-800 dark:text-ink-400">
+          <tr>
+            <th scope="col" class="px-4 py-3 font-medium">Name</th>
+            <th scope="col" class="px-4 py-3 font-medium">Size</th>
+            <th scope="col" class="px-4 py-3 font-medium">Uploaded</th>
+            <th scope="col" class="px-4 py-3 font-medium">Expires</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-ink-100 dark:divide-ink-800">
+          {% for row in rows %}
+          <tr class="align-middle {% if row.expired %}opacity-60{% endif %}">
+            <td class="max-w-xs px-4 py-3">
+              <div class="truncate font-medium" title="{{ row.name }}">{{ row.name }}</div>
+              <div class="truncate font-mono text-xs text-ink-400" title="{{ row.id }}">{{ row.id }}</div>
+            </td>
+            <td class="whitespace-nowrap px-4 py-3 tabular-nums text-ink-600 dark:text-ink-300">{{ row.size | filesizeformat(binary=True) }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-ink-600 dark:text-ink-300">{{ (row.uploaded_at or '')[:10] or '—' }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-ink-600 dark:text-ink-300">
+              {% if row.expired %}<span class="text-red-600 dark:text-red-400">expired</span>
+              {% elif row.expires_at %}{{ row.expires_at[:10] }}{% else %}—{% endif %}
+            </td>
+            <td class="whitespace-nowrap px-4 py-3 text-right">
+              <div class="inline-flex items-center gap-1.5">
+                <a href="{{ url_for('download', file_id=row.id) }}" target="_blank" rel="noopener"
+                   class="focus-ring rounded-md px-2.5 py-1.5 text-ink-600 transition hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800">Open</a>
+                <form method="post" action="{{ url_for('admin_delete', file_id=row.id) }}"
+                      data-confirm="Delete “{{ row.name }}”? This can't be undone.">
+                  <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                  <button type="submit" class="btn-danger px-2.5 py-1.5">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if truncated %}
+    <p class="mt-4 text-sm text-ink-500 dark:text-ink-400">Only the first {{ rows|length }} files are shown. Raise <code>ADMIN_LIST_LIMIT</code> to see more.</p>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
+{% endblock %}
